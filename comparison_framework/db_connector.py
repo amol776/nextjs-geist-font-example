@@ -1,6 +1,6 @@
 import pandas as pd
 from sqlalchemy import create_engine, text
-from typing import Dict, Union, Optional
+from typing import Dict, Union, Optional, Any
 import pyodbc
 import teradatasql
 from utils import log_error, validate_connection_params
