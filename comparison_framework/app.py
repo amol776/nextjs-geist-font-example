@@ -337,6 +337,34 @@ def perform_comparison():
         join_keys = st.session_state.get('join_keys', None)
         
         with st.spinner("Generating comparison reports..."):
+            try:
+                from ydata_profiling import ProfileReport
+                import streamlit.components.v1 as components
+                
+                # Generate Y-Data HTML profiling reports
+                st.write("Generating Y-Data Profiling Reports...")
+                
+                # Source profiling
+                source_profile = ProfileReport(
+                    st.session_state.source_df,
+                    title="Source Data Profile Report",
+                    minimal=True
+                )
+                source_html = f"reports/SourceProfile_{timestamp}.html"
+                source_profile.to_file(source_html)
+                
+                # Target profiling
+                target_profile = ProfileReport(
+                    st.session_state.target_df,
+                    title="Target Data Profile Report",
+                    minimal=True
+                )
+                target_html = f"reports/TargetProfile_{timestamp}.html"
+                target_profile.to_file(target_html)
+                
+                # Generate other reports
+                st.write("Generating Comparison Reports...")
+                
                 # Generate difference report
                 diff_df, has_differences = ReportGenerator.generate_diff_report(
                     st.session_state.source_df,
@@ -372,6 +400,39 @@ def perform_comparison():
                     side_by_side_path,
                     join_keys=join_keys
                 )
+                
+                # Display Y-Data Profiling Reports in expandable sections
+                st.subheader("Y-Data Profiling Reports")
+                
+                with st.expander("Source Data Profile", expanded=False):
+                    with open(source_html, 'r', encoding='utf-8') as f:
+                        components.html(f.read(), height=600, scrolling=True)
+                    
+                    # Download button for source profile
+                    with open(source_html, 'rb') as f:
+                        st.download_button(
+                            "Download Source Profile Report",
+                            f,
+                            file_name=f"SourceProfile_{timestamp}.html",
+                            mime="text/html"
+                        )
+                
+                with st.expander("Target Data Profile", expanded=False):
+                    with open(target_html, 'r', encoding='utf-8') as f:
+                        components.html(f.read(), height=600, scrolling=True)
+                    
+                    # Download button for target profile
+                    with open(target_html, 'rb') as f:
+                        st.download_button(
+                            "Download Target Profile Report",
+                            f,
+                            file_name=f"TargetProfile_{timestamp}.html",
+                            mime="text/html"
+                        )
+                
+            except ImportError:
+                st.warning("Y-Data Profiling package not installed. Please install ydata-profiling package.")
+                # Continue with other reports...
 
         # Display results and download buttons
         col1, col2 = st.columns(2)
