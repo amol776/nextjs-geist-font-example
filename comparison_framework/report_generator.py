@@ -444,7 +444,8 @@ class ReportGenerator:
         source_df: pd.DataFrame,
         target_df: pd.DataFrame,
         column_mapping: Dict[str, str],
-        output_path: Optional[str] = None
+        output_path: Optional[str] = None,
+        join_keys: Optional[List[str]] = None
     ) -> Tuple[pd.DataFrame, str]:
         """
         Generate side-by-side difference report.
@@ -454,42 +455,72 @@ class ReportGenerator:
             target_df: Target DataFrame
             column_mapping: Dictionary mapping source columns to target columns
             output_path: Optional path to save Excel report
+            join_keys: Optional list of columns to use as join keys
             
         Returns:
             Tuple[pd.DataFrame, str]: (Difference report DataFrame, Output path if saved)
         """
         try:
             # Create side-by-side comparison
-            comparison_data = []
-            
-            for source_col, target_col in column_mapping.items():
-                source_values = source_df[source_col]
-                target_values = target_df[target_col]
+            if join_keys and all(key in source_df.columns and key in target_df.columns for key in join_keys):
+                # Merge source and target on join keys
+                source_subset = source_df[join_keys + list(column_mapping.keys())].copy()
+                target_subset = target_df[join_keys + list(column_mapping.values())].copy()
                 
-                # Find differences
-                mask = source_values != target_values
-                if mask.any():
-                    diff_indices = mask[mask].index
-                    for idx in diff_indices:
-                        comparison_data.append({
-                            'Row_Index': idx,
-                            f'Source_{source_col}': source_values[idx],
-                            f'Target_{target_col}': target_values[idx]
-                        })
-
-            if not comparison_data:
-                diff_df = pd.DataFrame({'Message': ['No differences found']})
+                # Add suffixes to non-key columns
+                rename_dict = {v: f"{k}_target" for k, v in column_mapping.items()}
+                target_subset.rename(columns=rename_dict, inplace=True)
+                source_subset.rename(columns={k: f"{k}_source" for k in column_mapping.keys()}, inplace=True)
+                
+                # Merge dataframes
+                comparison_df = pd.merge(
+                    source_subset,
+                    target_subset,
+                    on=join_keys,
+                    how='outer',
+                    indicator=True
+                )
+                
+                # Add match status column
+                comparison_df['Match_Status'] = comparison_df.apply(
+                    lambda row: 'Match' if row['_merge'] == 'both' else 'Source Only' if row['_merge'] == 'left_only' else 'Target Only',
+                    axis=1
+                )
+                
+                # Drop the merge indicator column
+                comparison_df.drop('_merge', axis=1, inplace=True)
+                
             else:
-                diff_df = pd.DataFrame(comparison_data)
+                # Without join keys, do a simple side-by-side comparison
+                comparison_data = []
+                
+                for source_col, target_col in column_mapping.items():
+                    source_values = source_df[source_col]
+                    target_values = target_df[target_col]
+                    
+                    # Find differences
+                    for idx in range(min(len(source_values), len(target_values))):
+                        if pd.notna(source_values.iloc[idx]) and pd.notna(target_values.iloc[idx]):
+                            if source_values.iloc[idx] != target_values.iloc[idx]:
+                                comparison_data.append({
+                                    'Row_Index': idx,
+                                    f'Source_{source_col}': source_values.iloc[idx],
+                                    f'Target_{target_col}': target_values.iloc[idx]
+                                })
+
+                if not comparison_data:
+                    comparison_df = pd.DataFrame({'Message': ['No differences found']})
+                else:
+                    comparison_df = pd.DataFrame(comparison_data)
 
             # Save to Excel if path provided
             if output_path:
                 with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-                    diff_df.to_excel(writer, index=False)
+                    comparison_df.to_excel(writer, index=False)
                     ReportGenerator._apply_excel_formatting(writer.book.active)
-                return diff_df, output_path
+                return comparison_df, output_path
             
-            return diff_df, ''
+            return comparison_df, ''
 
         except Exception as e:
             log_error(f"Error generating side-by-side report: {str(e)}")
