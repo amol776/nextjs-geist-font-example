@@ -298,8 +298,34 @@ def perform_comparison():
                     )
         
         with col2:
-            st.markdown("#### Data Profiling Results")
-            st.dataframe(profile_df)
+            st.markdown("#### Y-Data Profiling Results")
+            if not profile_df.empty:
+                # Format the dataframe for better display
+                st.write("Column-wise Statistical Comparison:")
+                
+                # Create an expander for detailed view
+                with st.expander("View Detailed Profiling Report", expanded=True):
+                    # Display main metrics
+                    st.write("Main Metrics:")
+                    main_metrics = profile_df[['Column', 'Source_Count', 'Target_Count', 'Match_Percentage']]
+                    st.dataframe(main_metrics, use_container_width=True)
+                    
+                    # Display detailed statistics
+                    st.write("Detailed Statistics:")
+                    st.dataframe(profile_df, use_container_width=True)
+                    
+                    # Download button for profiling report
+                    profiling_path = f"reports/ProfilingReport_{timestamp}.xlsx"
+                    profile_df.to_excel(profiling_path, index=False)
+                    with open(profiling_path, 'rb') as f:
+                        st.download_button(
+                            "Download Complete Profiling Report",
+                            f,
+                            file_name=f"ProfilingReport_{timestamp}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+            else:
+                st.error("Unable to generate profiling report. Please check the data and try again.")
             
             if os.path.exists(regression_path):
                 with open(regression_path, 'rb') as f:
