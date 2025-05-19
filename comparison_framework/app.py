@@ -73,46 +73,59 @@ def main():
         st.session_state.source_df = source_data
         st.session_state.target_df = target_data
         
+        # Initialize or update column mapping
+        if not st.session_state.column_mapping:
+            st.session_state.column_mapping = MappingManager.auto_map_columns(source_data, target_data)
+
         # Show column mapping interface
         st.subheader("Column Mapping")
         show_column_mapping_interface(source_data, target_data)
 
-        # Add join key selection
+        # Add join key selection based on mapped columns
         st.subheader("Join Key Selection")
-        common_columns = list(set(source_data.columns) & set(target_data.columns))
-        if not common_columns:
-            st.warning("No common columns found between source and target data")
+        
+        # Get mapped columns (where source and target are mapped)
+        mapped_columns = {source_col: target_col 
+                        for source_col, target_col in st.session_state.column_mapping.items()
+                        if source_col in source_data.columns and target_col in target_data.columns}
+        
+        if not mapped_columns:
+            st.warning("No mapped columns available for join keys. Please map columns first.")
             join_keys = None
         else:
-            # Show common columns in a more readable format
-            st.write("Common columns available for joining:")
-            for col in common_columns:
-                st.write(f"- {col}")
+            # Show mapped columns available for joining
+            st.write("Mapped columns available for joining:")
+            mapped_preview = []
+            for source_col, target_col in mapped_columns.items():
+                st.write(f"- Source: {source_col} → Target: {target_col}")
+                # Get sample values
+                source_sample = source_data[source_col].head(3).tolist()
+                target_sample = target_data[target_col].head(3).tolist()
+                mapped_preview.append({
+                    'Source Column': source_col,
+                    'Target Column': target_col,
+                    'Source Sample': str(source_sample),
+                    'Target Sample': str(target_sample)
+                })
             
+            # Show preview of mapped columns
+            if mapped_preview:
+                st.write("Preview of mapped columns:")
+                st.dataframe(pd.DataFrame(mapped_preview))
+            
+            # Select join keys from mapped columns
             selected_keys = st.multiselect(
                 "Select Join Key(s)",
-                options=common_columns,
-                help="Select one or more columns to use as join keys for comparison. These columns should uniquely identify records."
+                options=list(mapped_columns.keys()),
+                help="Select one or more mapped columns to use as join keys for comparison. These columns should uniquely identify records."
             )
             
-            # Validate selected join keys
             if selected_keys:
-                # Check if selected keys exist in both dataframes
-                invalid_keys = [key for key in selected_keys 
-                              if key not in source_data.columns or key not in target_data.columns]
-                if invalid_keys:
-                    st.error(f"Invalid join keys selected: {', '.join(invalid_keys)}")
-                    join_keys = None
-                else:
-                    join_keys = selected_keys
-                    # Show preview of join keys
-                    st.write("Preview of selected join keys:")
-                    preview_df = pd.DataFrame({
-                        'Join Key': selected_keys,
-                        'Source Values (sample)': [str(source_data[key].head(3).tolist()) for key in selected_keys],
-                        'Target Values (sample)': [str(target_data[key].head(3).tolist()) for key in selected_keys]
-                    })
-                    st.dataframe(preview_df)
+                # Create the join keys mapping (source to target columns)
+                join_keys = [(source_col, mapped_columns[source_col]) for source_col in selected_keys]
+                st.write("Selected join keys:")
+                for source_col, target_col in join_keys:
+                    st.write(f"- {source_col} → {target_col}")
             else:
                 st.warning("No join keys selected. Comparison will be done row by row.")
                 join_keys = None
