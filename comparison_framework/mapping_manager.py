@@ -37,48 +37,66 @@ class MappingManager:
             dict: Mapping of source columns to target columns
         """
         mapping = {}
-        source_cols = [col.lower() for col in source_df.columns]
-        target_cols = [col.lower() for col in target_df.columns]
         
-        # First pass: exact matches
+        # Get column names and their sample values
+        source_cols = source_df.columns
+        target_cols = target_df.columns
+        
+        # First pass: exact matches (case-insensitive)
+        source_lower = [col.lower() for col in source_cols]
+        target_lower = [col.lower() for col in target_cols]
+        
         for idx, source_col in enumerate(source_cols):
-            if source_col in target_cols:
-                mapping[source_df.columns[idx]] = target_df.columns[target_cols.index(source_col)]
+            source_lower_col = source_lower[idx]
+            if source_lower_col in target_lower:
+                target_idx = target_lower.index(source_lower_col)
+                mapping[source_col] = target_cols[target_idx]
         
-        # Second pass: fuzzy matches for unmapped columns
-        unmapped_source = [col for col in source_df.columns if col not in mapping]
+        # Second pass: fuzzy matches based on column names and data patterns
+        unmapped_source = [col for col in source_cols if col not in mapping]
+        unmapped_target = [col for col in target_cols if col not in mapping.values()]
+        
         for source_col in unmapped_source:
-            # Simple fuzzy matching (remove special characters and spaces)
-            clean_source = ''.join(e.lower() for e in source_col if e.isalnum())
             best_match = None
             best_score = 0
             
-            for target_col in target_df.columns:
-                clean_target = ''.join(e.lower() for e in target_col if e.isalnum())
+            # Get sample values from source column
+            source_sample = source_df[source_col].head(5).astype(str).tolist()
+            source_dtype = str(source_df[source_col].dtype)
+            
+            for target_col in unmapped_target:
+                # Compare data types
+                target_dtype = str(target_df[target_col].dtype)
+                type_match = source_dtype == target_dtype
                 
-                # Calculate similarity score
-                score = cls._calculate_similarity(clean_source, clean_target)
-                if score > best_score and score > 0.8:  # 80% similarity threshold
-                    best_score = score
+                # Compare column names using fuzzy matching
+                name_score = cls._calculate_similarity(
+                    ''.join(e.lower() for e in source_col if e.isalnum()),
+                    ''.join(e.lower() for e in target_col if e.isalnum())
+                )
+                
+                # Compare data patterns
+                target_sample = target_df[target_col].head(5).astype(str).tolist()
+                data_score = cls._calculate_data_similarity(source_sample, target_sample)
+                
+                # Calculate combined score
+                combined_score = (name_score * 0.6) + (data_score * 0.4)
+                if type_match:
+                    combined_score += 0.1
+                
+                if combined_score > best_score and combined_score > 0.7:  # 70% similarity threshold
+                    best_score = combined_score
                     best_match = target_col
             
             if best_match:
                 mapping[source_col] = best_match
+                unmapped_target.remove(best_match)
         
         return mapping
 
     @staticmethod
     def _calculate_similarity(str1: str, str2: str) -> float:
-        """
-        Calculate similarity between two strings using Levenshtein distance.
-        
-        Args:
-            str1: First string
-            str2: Second string
-            
-        Returns:
-            float: Similarity score between 0 and 1
-        """
+        """Calculate similarity between two strings using Levenshtein distance."""
         if not str1 or not str2:
             return 0
             
@@ -103,6 +121,49 @@ class MappingManager:
         max_len = max(len(str1), len(str2))
         similarity = 1 - (previous_row[-1] / max_len)
         return similarity
+
+    @staticmethod
+    def _calculate_data_similarity(source_sample: List[str], target_sample: List[str]) -> float:
+        """Calculate similarity between two lists of data samples."""
+        if not source_sample or not target_sample:
+            return 0
+        
+        # Convert all values to lowercase strings for comparison
+        source_values = [str(val).lower() for val in source_sample]
+        target_values = [str(val).lower() for val in target_sample]
+        
+        # Calculate pattern similarity
+        total_score = 0
+        comparisons = 0
+        
+        # Compare data patterns
+        for s_val in source_values:
+            best_match = 0
+            for t_val in target_values:
+                # Check for exact matches
+                if s_val == t_val:
+                    best_match = 1
+                    break
+                
+                # Check for numeric patterns
+                s_numeric = ''.join(c for c in s_val if c.isdigit())
+                t_numeric = ''.join(c for c in t_val if c.isdigit())
+                if s_numeric and t_numeric:
+                    if s_numeric == t_numeric:
+                        best_match = max(best_match, 0.9)
+                        continue
+                
+                # Check for string patterns
+                s_alpha = ''.join(c for c in s_val if c.isalpha())
+                t_alpha = ''.join(c for c in t_val if c.isalpha())
+                if s_alpha and t_alpha:
+                    alpha_sim = MappingManager._calculate_similarity(s_alpha, t_alpha)
+                    best_match = max(best_match, alpha_sim * 0.8)
+            
+            total_score += best_match
+            comparisons += 1
+        
+        return total_score / comparisons if comparisons > 0 else 0
 
     @classmethod
     def generate_data_type_mapping(cls, df: pd.DataFrame) -> Dict[str, str]:
