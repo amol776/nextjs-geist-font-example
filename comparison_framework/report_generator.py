@@ -20,7 +20,8 @@ class ReportGenerator:
         source_df: pd.DataFrame,
         target_df: pd.DataFrame,
         column_mapping: Dict[str, str],
-        exclude_columns: List[str] = None
+        exclude_columns: List[str] = None,
+        join_keys: Optional[List[str]] = None
     ) -> Tuple[pd.DataFrame, bool]:
         """
         Generate a difference report between source and target DataFrames.
@@ -30,6 +31,7 @@ class ReportGenerator:
             target_df: Target DataFrame
             column_mapping: Dictionary mapping source columns to target columns
             exclude_columns: List of columns to exclude from comparison
+            join_keys: Optional list of columns to use as join keys
             
         Returns:
             Tuple[pd.DataFrame, bool]: (Difference report DataFrame, Whether differences were found)
@@ -40,32 +42,89 @@ class ReportGenerator:
                 column_mapping = {k: v for k, v in column_mapping.items() 
                                 if k not in exclude_columns}
 
+            # Convert data types for comparison
+            source_df = source_df.copy()
+            target_df = target_df.copy()
+            
+            # Function to safely convert numeric columns
+            def safe_numeric_conversion(series):
+                try:
+                    if series.dtype == 'object':
+                        return pd.to_numeric(series, errors='coerce')
+                    return series
+                except:
+                    return series
+
+            # Apply numeric conversion to both dataframes
+            for source_col, target_col in column_mapping.items():
+                source_df[source_col] = safe_numeric_conversion(source_df[source_col])
+                target_df[target_col] = safe_numeric_conversion(target_df[target_col])
+
             differences = []
             
-            # Compare mapped columns
-            for source_col, target_col in column_mapping.items():
-                source_values = source_df[source_col]
-                target_values = target_df[target_col]
+            if join_keys and all(key in source_df.columns and key in target_df.columns for key in join_keys):
+                # Merge source and target on join keys
+                merged_df = pd.merge(
+                    source_df,
+                    target_df,
+                    how='outer',
+                    left_on=join_keys,
+                    right_on=join_keys,
+                    indicator=True
+                )
                 
-                # Find rows where values don't match
-                mask = source_values != target_values
-                if mask.any():
-                    diff_indices = mask[mask].index
-                    for idx in diff_indices:
-                        differences.append({
-                            'Column': source_col,
-                            'Row_Index': idx,
-                            'Source_Value': source_values[idx],
-                            'Target_Value': target_values[idx]
-                        })
+                # Compare mapped columns for merged data
+                for source_col, target_col in column_mapping.items():
+                    source_values = merged_df[source_col + '_x']
+                    target_values = merged_df[target_col + '_y']
+                    
+                    # Handle missing values from outer join
+                    for idx in merged_df.index:
+                        if merged_df.at[idx, '_merge'] == 'left_only':
+                            differences.append({
+                                'Column': source_col,
+                                'Join_Keys': {k: merged_df.at[idx, k] for k in join_keys},
+                                'Source_Value': source_values[idx],
+                                'Target_Value': 'Missing in Target'
+                            })
+                        elif merged_df.at[idx, '_merge'] == 'right_only':
+                            differences.append({
+                                'Column': source_col,
+                                'Join_Keys': {k: merged_df.at[idx, k] for k in join_keys},
+                                'Source_Value': 'Missing in Source',
+                                'Target_Value': target_values[idx]
+                            })
+                        elif pd.notna(source_values[idx]) and pd.notna(target_values[idx]):
+                            if source_values[idx] != target_values[idx]:
+                                differences.append({
+                                    'Column': source_col,
+                                    'Join_Keys': {k: merged_df.at[idx, k] for k in join_keys},
+                                    'Source_Value': source_values[idx],
+                                    'Target_Value': target_values[idx]
+                                })
+            else:
+                # Compare mapped columns without join keys
+                for source_col, target_col in column_mapping.items():
+                    source_values = source_df[source_col]
+                    target_values = target_df[target_col]
+                    
+                    # Find rows where values don't match
+                    for idx in range(min(len(source_values), len(target_values))):
+                        if pd.notna(source_values.iloc[idx]) and pd.notna(target_values.iloc[idx]):
+                            if source_values.iloc[idx] != target_values.iloc[idx]:
+                                differences.append({
+                                    'Column': source_col,
+                                    'Row_Index': idx,
+                                    'Source_Value': source_values.iloc[idx],
+                                    'Target_Value': target_values.iloc[idx]
+                                })
 
             # Create difference report DataFrame
             if differences:
                 diff_df = pd.DataFrame(differences)
                 return diff_df, True
             else:
-                return pd.DataFrame(columns=['Message']).append(
-                    {'Message': 'No differences found'}, ignore_index=True), False
+                return pd.DataFrame({'Message': ['No differences found']}, index=[0]), False
 
         except Exception as e:
             log_error(f"Error generating difference report: {str(e)}")
@@ -75,7 +134,8 @@ class ReportGenerator:
     def generate_profiling_report(
         source_df: pd.DataFrame,
         target_df: pd.DataFrame,
-        column_mapping: Dict[str, str]
+        column_mapping: Dict[str, str],
+        join_keys: Optional[List[str]] = None
     ) -> pd.DataFrame:
         """
         Generate Y-Data profiling comparison report.
@@ -84,65 +144,134 @@ class ReportGenerator:
             source_df: Source DataFrame
             target_df: Target DataFrame
             column_mapping: Dictionary mapping source columns to target columns
+            join_keys: Optional list of columns to use as join keys
             
         Returns:
             pd.DataFrame: Profiling report DataFrame
         """
         try:
+            # Convert data types based on mapping
+            source_df = source_df.copy()
+            target_df = target_df.copy()
+            
+            # Function to safely convert numeric columns
+            def safe_numeric_conversion(series):
+                try:
+                    # Try to convert to numeric, coercing errors to NaN
+                    return pd.to_numeric(series, errors='coerce')
+                except:
+                    return series
+
+            # Apply numeric conversion to both dataframes
+            for source_col, target_col in column_mapping.items():
+                # Convert source column if it looks numeric
+                if source_df[source_col].dtype == 'object':
+                    source_df[source_col] = safe_numeric_conversion(source_df[source_col])
+                
+                # Convert target column if it looks numeric
+                if target_df[target_col].dtype == 'object':
+                    target_df[target_col] = safe_numeric_conversion(target_df[target_col])
+
+            # If join keys are provided, merge the dataframes
+            if join_keys and all(key in source_df.columns and key in target_df.columns for key in join_keys):
+                merged_df = pd.merge(
+                    source_df,
+                    target_df,
+                    how='inner',
+                    left_on=join_keys,
+                    right_on=join_keys,
+                    suffixes=('_source', '_target')
+                )
+            else:
+                # If no join keys or invalid keys, use the original dataframes
+                merged_df = None
+
             profile_data = []
             
             for source_col, target_col in column_mapping.items():
-                # Get source column statistics
+                # Get source and target series
                 source_series = source_df[source_col]
+                target_series = target_df[target_col]
+
+                # Calculate basic statistics
                 source_stats = {
                     'count': len(source_series),
                     'null_count': source_series.isnull().sum(),
-                    'distinct_count': source_series.nunique(),
-                    'min': str(source_series.min()) if not source_series.empty else 'N/A',
-                    'max': str(source_series.max()) if not source_series.empty else 'N/A',
-                    'mean': str(source_series.mean()) if source_series.dtype in ['int64', 'float64'] else 'N/A',
-                    'std': str(source_series.std()) if source_series.dtype in ['int64', 'float64'] else 'N/A',
-                    'median': str(source_series.median()) if source_series.dtype in ['int64', 'float64'] else 'N/A'
+                    'distinct_count': source_series.nunique()
                 }
-
-                # Get target column statistics
-                target_series = target_df[target_col]
+                
                 target_stats = {
                     'count': len(target_series),
                     'null_count': target_series.isnull().sum(),
-                    'distinct_count': target_series.nunique(),
-                    'min': str(target_series.min()) if not target_series.empty else 'N/A',
-                    'max': str(target_series.max()) if not target_series.empty else 'N/A',
-                    'mean': str(target_series.mean()) if target_series.dtype in ['int64', 'float64'] else 'N/A',
-                    'std': str(target_series.std()) if target_series.dtype in ['int64', 'float64'] else 'N/A',
-                    'median': str(target_series.median()) if target_series.dtype in ['int64', 'float64'] else 'N/A'
+                    'distinct_count': target_series.nunique()
                 }
 
-                # Calculate match percentage for non-null values
-                if source_stats['count'] > 0 and target_stats['count'] > 0:
-                    matching_values = (source_series == target_series).sum()
-                    match_percentage = (matching_values / max(source_stats['count'], target_stats['count'])) * 100
+                # Calculate numeric statistics if possible
+                for series, stats, prefix in [(source_series, source_stats, 'source'), 
+                                           (target_series, target_stats, 'target')]:
+                    try:
+                        numeric_series = pd.to_numeric(series, errors='coerce')
+                        stats.update({
+                            'min': numeric_series.min(),
+                            'max': numeric_series.max(),
+                            'mean': numeric_series.mean(),
+                            'std': numeric_series.std(),
+                            'median': numeric_series.median()
+                        })
+                    except:
+                        stats.update({
+                            'min': 'N/A',
+                            'max': 'N/A',
+                            'mean': 'N/A',
+                            'std': 'N/A',
+                            'median': 'N/A'
+                        })
+
+                # Calculate match percentage
+                if merged_df is not None:
+                    source_col_merged = f"{source_col}_source"
+                    target_col_merged = f"{target_col}_target"
+                    matching_values = (merged_df[source_col_merged] == merged_df[target_col_merged]).sum()
+                    total_rows = len(merged_df)
+                    match_percentage = (matching_values / total_rows * 100) if total_rows > 0 else 0
                 else:
-                    match_percentage = 0
+                    # If no merge possible, calculate based on position
+                    min_len = min(len(source_series), len(target_series))
+                    if min_len > 0:
+                        matching_values = (source_series.iloc[:min_len] == target_series.iloc[:min_len]).sum()
+                        match_percentage = (matching_values / min_len * 100)
+                    else:
+                        match_percentage = 0
+
+                # Format numeric values as strings with appropriate precision
+                def format_value(value):
+                    if pd.isna(value) or value == 'N/A':
+                        return 'N/A'
+                    try:
+                        if isinstance(value, (int, float)):
+                            return f"{value:,.2f}" if value % 1 != 0 else f"{int(value):,}"
+                        return str(value)
+                    except:
+                        return str(value)
 
                 profile_data.append({
                     'Column': source_col,
-                    'Source_Count': source_stats['count'],
-                    'Target_Count': target_stats['count'],
-                    'Source_Nulls': source_stats['null_count'],
-                    'Target_Nulls': target_stats['null_count'],
-                    'Source_Distinct': source_stats['distinct_count'],
-                    'Target_Distinct': target_stats['distinct_count'],
-                    'Source_Min': source_stats['min'],
-                    'Target_Min': target_stats['min'],
-                    'Source_Max': source_stats['max'],
-                    'Target_Max': target_stats['max'],
-                    'Source_Mean': source_stats['mean'],
-                    'Target_Mean': target_stats['mean'],
-                    'Source_StdDev': source_stats['std'],
-                    'Target_StdDev': target_stats['std'],
-                    'Source_Median': source_stats['median'],
-                    'Target_Median': target_stats['median'],
+                    'Source_Count': format_value(source_stats['count']),
+                    'Target_Count': format_value(target_stats['count']),
+                    'Source_Nulls': format_value(source_stats['null_count']),
+                    'Target_Nulls': format_value(target_stats['null_count']),
+                    'Source_Distinct': format_value(source_stats['distinct_count']),
+                    'Target_Distinct': format_value(target_stats['distinct_count']),
+                    'Source_Min': format_value(source_stats['min']),
+                    'Target_Min': format_value(target_stats['min']),
+                    'Source_Max': format_value(source_stats['max']),
+                    'Target_Max': format_value(target_stats['max']),
+                    'Source_Mean': format_value(source_stats['mean']),
+                    'Target_Mean': format_value(target_stats['mean']),
+                    'Source_StdDev': format_value(source_stats['std']),
+                    'Target_StdDev': format_value(target_stats['std']),
+                    'Source_Median': format_value(source_stats['median']),
+                    'Target_Median': format_value(target_stats['median']),
                     'Match_Percentage': f"{match_percentage:.2f}%"
                 })
             
