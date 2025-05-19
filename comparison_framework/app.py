@@ -135,7 +135,8 @@ def main():
 
         # Compare button
         if st.button("Compare Data", type="primary"):
-            perform_comparison()
+            with st.spinner("Generating comparison reports..."):
+                perform_comparison()
 
 def handle_data_source(source_type: str, prefix: str) -> Optional[pd.DataFrame]:
     """Handle different types of data sources"""
