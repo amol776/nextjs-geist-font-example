@@ -77,6 +77,25 @@ def main():
         st.subheader("Column Mapping")
         show_column_mapping_interface(source_data, target_data)
 
+        # Add join key selection
+        st.subheader("Join Key Selection")
+        common_columns = list(set(source_data.columns) & set(target_data.columns))
+        if not common_columns:
+            st.warning("No common columns found between source and target data")
+            join_keys = None
+        else:
+            selected_keys = st.multiselect(
+                "Select Join Key(s)",
+                options=common_columns,
+                help="Select one or more columns to use as join keys for comparison"
+            )
+            join_keys = selected_keys if selected_keys else None
+            if not selected_keys:
+                st.warning("No join keys selected. Comparison will be done row by row.")
+
+        # Store join keys in session state
+        st.session_state.join_keys = join_keys
+
         # Compare button
         if st.button("Compare Data", type="primary"):
             perform_comparison()
@@ -247,39 +266,45 @@ def perform_comparison():
         timestamp = format_timestamp()
         
         # Generate reports
+        join_keys = st.session_state.get('join_keys', None)
+        
         with st.spinner("Generating comparison reports..."):
-            # Generate difference report
-            diff_df, has_differences = ReportGenerator.generate_diff_report(
-                st.session_state.source_df,
-                st.session_state.target_df,
-                st.session_state.column_mapping,
-                st.session_state.excluded_columns
-            )
-            
-            # Generate profiling report
-            profile_df = ReportGenerator.generate_profiling_report(
-                st.session_state.source_df,
-                st.session_state.target_df,
-                st.session_state.column_mapping
-            )
-            
-            # Generate regression report
-            regression_path = f"reports/RegressionReport_{timestamp}.xlsx"
-            ReportGenerator.generate_regression_report(
-                st.session_state.source_df,
-                st.session_state.target_df,
-                st.session_state.column_mapping,
-                regression_path
-            )
-            
-            # Generate side-by-side report
-            side_by_side_path = f"reports/DifferenceReport_{timestamp}.xlsx"
-            side_by_side_df, _ = ReportGenerator.generate_side_by_side_report(
-                st.session_state.source_df,
-                st.session_state.target_df,
-                st.session_state.column_mapping,
-                side_by_side_path
-            )
+                # Generate difference report
+                diff_df, has_differences = ReportGenerator.generate_diff_report(
+                    st.session_state.source_df,
+                    st.session_state.target_df,
+                    st.session_state.column_mapping,
+                    st.session_state.excluded_columns,
+                    join_keys=join_keys
+                )
+                
+                # Generate profiling report
+                profile_df = ReportGenerator.generate_profiling_report(
+                    st.session_state.source_df,
+                    st.session_state.target_df,
+                    st.session_state.column_mapping,
+                    join_keys=join_keys
+                )
+                
+                # Generate regression report
+                regression_path = f"reports/RegressionReport_{timestamp}.xlsx"
+                ReportGenerator.generate_regression_report(
+                    st.session_state.source_df,
+                    st.session_state.target_df,
+                    st.session_state.column_mapping,
+                    regression_path,
+                    join_keys=join_keys
+                )
+                
+                # Generate side-by-side report
+                side_by_side_path = f"reports/DifferenceReport_{timestamp}.xlsx"
+                side_by_side_df, _ = ReportGenerator.generate_side_by_side_report(
+                    st.session_state.source_df,
+                    st.session_state.target_df,
+                    st.session_state.column_mapping,
+                    side_by_side_path,
+                    join_keys=join_keys
+                )
 
         # Display results and download buttons
         col1, col2 = st.columns(2)
