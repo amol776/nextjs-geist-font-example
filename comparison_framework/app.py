@@ -84,14 +84,38 @@ def main():
             st.warning("No common columns found between source and target data")
             join_keys = None
         else:
+            # Show common columns in a more readable format
+            st.write("Common columns available for joining:")
+            for col in common_columns:
+                st.write(f"- {col}")
+            
             selected_keys = st.multiselect(
                 "Select Join Key(s)",
                 options=common_columns,
-                help="Select one or more columns to use as join keys for comparison"
+                help="Select one or more columns to use as join keys for comparison. These columns should uniquely identify records."
             )
-            join_keys = selected_keys if selected_keys else None
-            if not selected_keys:
+            
+            # Validate selected join keys
+            if selected_keys:
+                # Check if selected keys exist in both dataframes
+                invalid_keys = [key for key in selected_keys 
+                              if key not in source_data.columns or key not in target_data.columns]
+                if invalid_keys:
+                    st.error(f"Invalid join keys selected: {', '.join(invalid_keys)}")
+                    join_keys = None
+                else:
+                    join_keys = selected_keys
+                    # Show preview of join keys
+                    st.write("Preview of selected join keys:")
+                    preview_df = pd.DataFrame({
+                        'Join Key': selected_keys,
+                        'Source Values (sample)': [str(source_data[key].head(3).tolist()) for key in selected_keys],
+                        'Target Values (sample)': [str(target_data[key].head(3).tolist()) for key in selected_keys]
+                    })
+                    st.dataframe(preview_df)
+            else:
                 st.warning("No join keys selected. Comparison will be done row by row.")
+                join_keys = None
 
         # Store join keys in session state
         st.session_state.join_keys = join_keys
