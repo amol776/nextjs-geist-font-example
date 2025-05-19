@@ -92,9 +92,39 @@ class ReportGenerator:
             profile_data = []
             
             for source_col, target_col in column_mapping.items():
-                source_stats = ReportGenerator._calculate_column_stats(source_df[source_col])
-                target_stats = ReportGenerator._calculate_column_stats(target_df[target_col])
-                
+                # Get source column statistics
+                source_series = source_df[source_col]
+                source_stats = {
+                    'count': len(source_series),
+                    'null_count': source_series.isnull().sum(),
+                    'distinct_count': source_series.nunique(),
+                    'min': str(source_series.min()) if not source_series.empty else 'N/A',
+                    'max': str(source_series.max()) if not source_series.empty else 'N/A',
+                    'mean': str(source_series.mean()) if source_series.dtype in ['int64', 'float64'] else 'N/A',
+                    'std': str(source_series.std()) if source_series.dtype in ['int64', 'float64'] else 'N/A',
+                    'median': str(source_series.median()) if source_series.dtype in ['int64', 'float64'] else 'N/A'
+                }
+
+                # Get target column statistics
+                target_series = target_df[target_col]
+                target_stats = {
+                    'count': len(target_series),
+                    'null_count': target_series.isnull().sum(),
+                    'distinct_count': target_series.nunique(),
+                    'min': str(target_series.min()) if not target_series.empty else 'N/A',
+                    'max': str(target_series.max()) if not target_series.empty else 'N/A',
+                    'mean': str(target_series.mean()) if target_series.dtype in ['int64', 'float64'] else 'N/A',
+                    'std': str(target_series.std()) if target_series.dtype in ['int64', 'float64'] else 'N/A',
+                    'median': str(target_series.median()) if target_series.dtype in ['int64', 'float64'] else 'N/A'
+                }
+
+                # Calculate match percentage for non-null values
+                if source_stats['count'] > 0 and target_stats['count'] > 0:
+                    matching_values = (source_series == target_series).sum()
+                    match_percentage = (matching_values / max(source_stats['count'], target_stats['count'])) * 100
+                else:
+                    match_percentage = 0
+
                 profile_data.append({
                     'Column': source_col,
                     'Source_Count': source_stats['count'],
@@ -107,11 +137,30 @@ class ReportGenerator:
                     'Target_Min': target_stats['min'],
                     'Source_Max': source_stats['max'],
                     'Target_Max': target_stats['max'],
-                    'Source_Mean': source_stats.get('mean', 'N/A'),
-                    'Target_Mean': target_stats.get('mean', 'N/A')
+                    'Source_Mean': source_stats['mean'],
+                    'Target_Mean': target_stats['mean'],
+                    'Source_StdDev': source_stats['std'],
+                    'Target_StdDev': target_stats['std'],
+                    'Source_Median': source_stats['median'],
+                    'Target_Median': target_stats['median'],
+                    'Match_Percentage': f"{match_percentage:.2f}%"
                 })
             
-            return pd.DataFrame(profile_data)
+            # Create DataFrame and sort columns for better readability
+            df = pd.DataFrame(profile_data)
+            column_order = [
+                'Column',
+                'Source_Count', 'Target_Count',
+                'Source_Nulls', 'Target_Nulls',
+                'Source_Distinct', 'Target_Distinct',
+                'Source_Min', 'Target_Min',
+                'Source_Max', 'Target_Max',
+                'Source_Mean', 'Target_Mean',
+                'Source_Median', 'Target_Median',
+                'Source_StdDev', 'Target_StdDev',
+                'Match_Percentage'
+            ]
+            return df[column_order]
 
         except Exception as e:
             log_error(f"Error generating profiling report: {str(e)}")
