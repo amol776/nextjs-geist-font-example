@@ -242,11 +242,34 @@ def handle_api_connection(prefix: str) -> Optional[pd.DataFrame]:
 def show_column_mapping_interface(source_df: pd.DataFrame, target_df: pd.DataFrame):
     """Show interface for column mapping"""
     
-    # Auto-generate initial mapping if not already done
-    if not st.session_state.column_mapping:
-        st.session_state.column_mapping = MappingManager.auto_map_columns(source_df, target_df)
-
     st.markdown("### Column Mapping Configuration")
+    
+    # Add auto-map button
+    if st.button("Auto-Map Columns", key="auto_map_btn"):
+        st.session_state.column_mapping = MappingManager.auto_map_columns(source_df, target_df)
+        st.success("Columns automatically mapped!")
+    
+    # Show current mapping status
+    if st.session_state.column_mapping:
+        st.write(f"Currently mapped: {len(st.session_state.column_mapping)} columns")
+        
+        # Create a DataFrame to display the mapping
+        mapping_data = []
+        for source_col in source_df.columns:
+            source_sample = str(source_df[source_col].head(2).tolist())
+            target_col = st.session_state.column_mapping.get(source_col, '')
+            target_sample = str(target_df[target_col].head(2).tolist()) if target_col else ''
+            
+            mapping_data.append({
+                'Source Column': source_col,
+                'Source Sample': source_sample,
+                'Target Column': target_col,
+                'Target Sample': target_sample,
+                'Mapped': '✓' if target_col else '✗'
+            })
+        
+        mapping_df = pd.DataFrame(mapping_data)
+        st.dataframe(mapping_df, use_container_width=True)
     
     # Create three columns for the mapping interface
     col1, col2, col3 = st.columns([2, 2, 1])
@@ -264,19 +287,26 @@ def show_column_mapping_interface(source_df: pd.DataFrame, target_df: pd.DataFra
         
         with col1:
             st.text(source_col)
+            st.caption(f"Sample: {str(source_df[source_col].head(2).tolist())}")
         
         with col2:
             # Dropdown for target column selection
+            current_mapping = st.session_state.column_mapping.get(source_col, '')
+            target_options = [''] + list(target_df.columns)
+            target_index = target_options.index(current_mapping) if current_mapping in target_options else 0
+            
             target_col = st.selectbox(
                 f"Map to",
-                options=[''] + list(target_df.columns),
-                index=0 if source_col not in st.session_state.column_mapping 
-                else list(target_df.columns).index(st.session_state.column_mapping[source_col]) + 1,
+                options=target_options,
+                index=target_index,
                 key=f"mapping_{source_col}"
             )
             
             if target_col:
-                st.session_state.column_mapping[source_col] = target_col
+                if target_col != current_mapping:
+                    st.session_state.column_mapping[source_col] = target_col
+                    # Show sample of selected target column
+                    st.caption(f"Sample: {str(target_df[target_col].head(2).tolist())}")
             elif source_col in st.session_state.column_mapping:
                 del st.session_state.column_mapping[source_col]
         
