@@ -286,14 +286,13 @@ def perform_comparison():
                     join_keys=join_keys
                 )
                 
-                # Generate regression report
+                # Generate regression report (independent of join keys)
                 regression_path = f"reports/RegressionReport_{timestamp}.xlsx"
                 ReportGenerator.generate_regression_report(
                     st.session_state.source_df,
                     st.session_state.target_df,
                     st.session_state.column_mapping,
-                    regression_path,
-                    join_keys=join_keys
+                    regression_path
                 )
                 
                 # Generate side-by-side report
