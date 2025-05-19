@@ -24,8 +24,27 @@ class DataReader:
             if not check_file_size(file):
                 log_error("File size exceeds 3GB limit")
                 return None
-                
-            return pd.read_csv(file, delimiter=delimiter, **kwargs)
+
+            # Try to read with the specified delimiter and handle bad lines
+            try:
+                df = pd.read_csv(file, delimiter=delimiter, on_bad_lines='warn', encoding='utf-8', engine='python', **kwargs)
+            except (pd.errors.ParserError, UnicodeDecodeError):
+                # If that fails, try to detect the delimiter
+                if hasattr(file, 'seek'):
+                    file.seek(0)
+                actual_delimiter = DataReader.infer_delimiter(file)
+                if hasattr(file, 'seek'):
+                    file.seek(0)
+                df = pd.read_csv(file, delimiter=actual_delimiter, on_bad_lines='warn', encoding='utf-8', engine='python', **kwargs)
+            
+            # Clean column names
+            df.columns = df.columns.str.strip()
+            
+            # Handle any missing values
+            df = df.fillna('')
+            
+            return df
+
         except Exception as e:
             log_error(f"Error reading CSV file: {str(e)}")
             return None
@@ -47,8 +66,27 @@ class DataReader:
             if not check_file_size(file):
                 log_error("File size exceeds 3GB limit")
                 return None
-                
-            return pd.read_csv(file, delimiter=delimiter, **kwargs)
+            
+            # Try to read with the specified delimiter and handle bad lines
+            try:
+                df = pd.read_csv(file, delimiter=delimiter, on_bad_lines='warn', encoding='utf-8', engine='python', **kwargs)
+            except (pd.errors.ParserError, UnicodeDecodeError):
+                # If that fails, try to detect the delimiter
+                if hasattr(file, 'seek'):
+                    file.seek(0)
+                actual_delimiter = DataReader.infer_delimiter(file)
+                if hasattr(file, 'seek'):
+                    file.seek(0)
+                df = pd.read_csv(file, delimiter=actual_delimiter, on_bad_lines='warn', encoding='utf-8', engine='python', **kwargs)
+            
+            # Clean column names
+            df.columns = df.columns.str.strip()
+            
+            # Handle any missing values
+            df = df.fillna('')
+            
+            return df
+
         except Exception as e:
             log_error(f"Error reading DAT file: {str(e)}")
             return None
@@ -68,8 +106,17 @@ class DataReader:
             if not check_file_size(file):
                 log_error("File size exceeds 3GB limit")
                 return None
-                
-            return pd.read_parquet(file)
+            
+            df = pd.read_parquet(file)
+            
+            # Clean column names
+            df.columns = df.columns.str.strip()
+            
+            # Handle any missing values
+            df = df.fillna('')
+            
+            return df
+
         except Exception as e:
             log_error(f"Error reading Parquet file: {str(e)}")
             return None
@@ -95,8 +142,21 @@ class DataReader:
             with zipfile.ZipFile(zip_file) as z:
                 for filename in z.namelist():
                     with z.open(filename) as f:
-                        # Read the file into a DataFrame
-                        df = pd.read_csv(io.TextIOWrapper(f), sep=separator)
+                        try:
+                            # Try to read with the specified delimiter
+                            df = pd.read_csv(io.TextIOWrapper(f), delimiter=separator, on_bad_lines='warn', encoding='utf-8', engine='python')
+                        except (pd.errors.ParserError, UnicodeDecodeError):
+                            # If that fails, try to detect the delimiter
+                            actual_delimiter = DataReader.infer_delimiter(io.TextIOWrapper(f))
+                            f.seek(0)
+                            df = pd.read_csv(io.TextIOWrapper(f), delimiter=actual_delimiter, on_bad_lines='warn', encoding='utf-8', engine='python')
+                        
+                        # Clean column names
+                        df.columns = df.columns.str.strip()
+                        
+                        # Handle any missing values
+                        df = df.fillna('')
+                        
                         dfs.append(df)
 
             if not dfs:
@@ -105,6 +165,7 @@ class DataReader:
 
             # Combine all DataFrames
             return pd.concat(dfs, ignore_index=True)
+
         except Exception as e:
             log_error(f"Error processing zipped files: {str(e)}")
             return None
@@ -139,6 +200,7 @@ class DataReader:
                 return max(counts.items(), key=lambda x: x[1])[0]
             
             return ','  # Default to comma if no delimiter found
+
         except Exception as e:
             log_error(f"Error inferring delimiter: {str(e)}")
             return ','
