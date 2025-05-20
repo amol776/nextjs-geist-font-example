@@ -468,7 +468,7 @@ def perform_comparison():
                                 <h3>Matches</h3>
                                 <div class="match">
                                     <p>Number of rows match: {comparison.count_matching_rows()}</p>
-                                    <p>Number of columns match: {comparison.count_matching_columns()}</p>
+                                    <p>Number of columns match: {len(comparison.intersect_columns)}</p>
                                 </div>
                                 <h3>Mismatches</h3>
                                 <div class="mismatch">
@@ -583,12 +583,16 @@ def perform_comparison():
                             )
                         
                         st.write("### Column Match Status")
-                        for col in comparison.column_stats.index:
-                            match_rate = comparison.column_stats.loc[col, 'match_rate']
-                            st.progress(
-                                match_rate,
-                                text=f"{col}: {match_rate*100:.1f}% match rate"
-                            )
+                        if hasattr(comparison, 'column_stats') and not comparison.column_stats.empty:
+                            for col in comparison.column_stats.index:
+                                if 'match_rate' in comparison.column_stats.columns:
+                                    match_rate = comparison.column_stats.loc[col, 'match_rate']
+                                    st.progress(
+                                        match_rate,
+                                        text=f"{col}: {match_rate*100:.1f}% match rate"
+                                    )
+                        else:
+                            st.info("No column statistics available. This might happen if the datasets are identical or have no overlapping join keys.")
                 
             except ImportError:
                 st.warning("Y-Data Profiling package not installed. Please install ydata-profiling package.")
