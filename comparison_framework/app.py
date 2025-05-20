@@ -717,6 +717,33 @@ def perform_comparison():
             'regression_path': regression_path
         })
 
+        # Create zip file containing all reports
+        st.divider()
+        zip_path = f"reports/FinalComparison_{timestamp}.zip"
+        try:
+            import zipfile
+            with zipfile.ZipFile(zip_path, 'w') as zipf:
+                # Add all reports to zip
+                for report_name, report_path in st.session_state.report_paths.items():
+                    if report_path and os.path.exists(report_path):
+                        zipf.write(report_path, os.path.basename(report_path))
+            
+            # Add download button for zip file
+            st.markdown("### 📦 Download Complete Comparison Package")
+            st.caption("Contains all reports: Regression, Side by Side, DataCompy, and Profile Reports")
+            with open(zip_path, 'rb') as f:
+                st.download_button(
+                    "📥 Download All Reports (ZIP)",
+                    f,
+                    file_name=f"FinalComparison_{timestamp}.zip",
+                    mime="application/zip",
+                    key="download_all",
+                    use_container_width=True
+                )
+        except Exception as e:
+            st.error(f"Error creating zip file: {str(e)}")
+        st.divider()
+
         # Display results and download buttons
         col1, col2 = st.columns(2)
         
