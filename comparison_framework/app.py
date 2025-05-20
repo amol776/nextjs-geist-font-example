@@ -468,13 +468,14 @@ def perform_comparison():
                                 <h3>Matches</h3>
                                 <div class="match">
                                     <p>Number of rows match: {comparison.count_matching_rows()}</p>
-                                    <p>Number of columns match: {len(comparison.intersect_columns)}</p>
+                                    <p>Number of columns match: {len(set(st.session_state.source_df.columns).intersection(st.session_state.target_df.columns))}</p>
                                 </div>
                                 <h3>Mismatches</h3>
                                 <div class="mismatch">
                                     <p>Rows only in Source: {len(comparison.df1_unq_rows)}</p>
                                     <p>Rows only in Target: {len(comparison.df2_unq_rows)}</p>
-                                    <p>Number of columns with differences: {len(comparison.column_stats)}</p>
+                                    <p>Source-only columns: {len(set(st.session_state.source_df.columns) - set(st.session_state.target_df.columns))}</p>
+                                    <p>Target-only columns: {len(set(st.session_state.target_df.columns) - set(st.session_state.source_df.columns))}</p>
                                 </div>
                             </div>
                             <div class="section">
@@ -582,17 +583,60 @@ def perform_comparison():
                                 delta=f"{len(comparison.df2_unq_rows) / len(st.session_state.target_df) * 100:.1f}%"
                             )
                         
-                        st.write("### Column Match Status")
-                        if hasattr(comparison, 'column_stats') and not comparison.column_stats.empty:
-                            for col in comparison.column_stats.index:
-                                if 'match_rate' in comparison.column_stats.columns:
-                                    match_rate = comparison.column_stats.loc[col, 'match_rate']
-                                    st.progress(
-                                        match_rate,
-                                        text=f"{col}: {match_rate*100:.1f}% match rate"
-                                    )
+                        st.write("### Column Analysis")
+                        
+                        # Get column sets
+                        source_cols = set(st.session_state.source_df.columns)
+                        target_cols = set(st.session_state.target_df.columns)
+                        common_cols = source_cols.intersection(target_cols)
+                        source_only = source_cols - target_cols
+                        target_only = target_cols - source_cols
+                        
+                        # Display column sets
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write("Source-only Columns:")
+                            if source_only:
+                                for col in sorted(source_only):
+                                    st.info(f"- {col}")
+                            else:
+                                st.success("No source-only columns")
+                        
+                        with col2:
+                            st.write("Target-only Columns:")
+                            if target_only:
+                                for col in sorted(target_only):
+                                    st.info(f"- {col}")
+                            else:
+                                st.success("No target-only columns")
+                        
+                        st.write("### Common Column Analysis")
+                        if common_cols:
+                            for col in sorted(common_cols):
+                                # Calculate match rate for common columns
+                                source_values = set(st.session_state.source_df[col].dropna())
+                                target_values = set(st.session_state.target_df[col].dropna())
+                                common_values = source_values.intersection(target_values)
+                                all_values = source_values.union(target_values)
+                                match_rate = len(common_values) / len(all_values) if all_values else 1.0
+                                
+                                # Display progress bar with details
+                                st.progress(
+                                    match_rate,
+                                    text=f"{col}: {match_rate*100:.1f}% unique values match"
+                                )
+                                
+                                with st.expander(f"Details for {col}", expanded=False):
+                                    st.write(f"- Unique values in Source: {len(source_values)}")
+                                    st.write(f"- Unique values in Target: {len(target_values)}")
+                                    st.write(f"- Common unique values: {len(common_values)}")
+                                    if len(source_values - target_values) > 0:
+                                        st.write("- Values only in Source:", list(source_values - target_values)[:5])
+                                    if len(target_values - source_values) > 0:
+                                        st.write("- Values only in Target:", list(target_values - source_values)[:5])
                         else:
-                            st.info("No column statistics available. This might happen if the datasets are identical or have no overlapping join keys.")
+                            st.warning("No common columns found between source and target datasets")
                 
             except ImportError:
                 st.warning("Y-Data Profiling package not installed. Please install ydata-profiling package.")
