@@ -48,7 +48,7 @@ def main():
         unsafe_allow_html=True
     )
 
-    # Initialize session state
+    # Initialize session state variables
     if 'source_df' not in st.session_state:
         st.session_state.source_df = None
     if 'target_df' not in st.session_state:
@@ -57,6 +57,8 @@ def main():
         st.session_state.column_mapping = {}
     if 'excluded_columns' not in st.session_state:
         st.session_state.excluded_columns = []
+    if 'report_paths' not in st.session_state:
+        st.session_state.report_paths = {}
 
     # Create two columns for source and target selection
     col1, col2 = st.columns(2)
