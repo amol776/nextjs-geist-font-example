@@ -463,14 +463,16 @@ class ReportGenerator:
         try:
             # Create side-by-side comparison
             if join_keys and all(key in source_df.columns and key in target_df.columns for key in join_keys):
-                # Merge source and target on join keys
-                source_subset = source_df[join_keys + list(column_mapping.keys())].copy()
-                target_subset = target_df[join_keys + list(column_mapping.values())].copy()
+                # Prepare source dataframe
+                source_subset = source_df.copy()
+                source_cols = list(column_mapping.keys())
+                source_subset.columns = [f"{col}_source" if col in source_cols else col for col in source_subset.columns]
                 
-                # Add suffixes to non-key columns
+                # Prepare target dataframe
+                target_subset = target_df.copy()
+                target_cols = list(column_mapping.values())
                 rename_dict = {v: f"{k}_target" for k, v in column_mapping.items()}
                 target_subset.rename(columns=rename_dict, inplace=True)
-                source_subset.rename(columns={k: f"{k}_source" for k in column_mapping.keys()}, inplace=True)
                 
                 # Merge dataframes
                 comparison_df = pd.merge(
@@ -478,7 +480,8 @@ class ReportGenerator:
                     target_subset,
                     on=join_keys,
                     how='outer',
-                    indicator=True
+                    indicator=True,
+                    suffixes=('_source', '_target')
                 )
                 
                 # Add match status column
@@ -492,21 +495,26 @@ class ReportGenerator:
                 
             else:
                 # Without join keys, do a simple side-by-side comparison
+                max_rows = min(len(source_df), len(target_df))
                 comparison_data = []
                 
-                for source_col, target_col in column_mapping.items():
-                    source_values = source_df[source_col]
-                    target_values = target_df[target_col]
+                for idx in range(max_rows):
+                    row_data = {'Row_Index': idx}
+                    has_difference = False
                     
-                    # Find differences
-                    for idx in range(min(len(source_values), len(target_values))):
-                        if pd.notna(source_values.iloc[idx]) and pd.notna(target_values.iloc[idx]):
-                            if source_values.iloc[idx] != target_values.iloc[idx]:
-                                comparison_data.append({
-                                    'Row_Index': idx,
-                                    f'Source_{source_col}': source_values.iloc[idx],
-                                    f'Target_{target_col}': target_values.iloc[idx]
-                                })
+                    for source_col, target_col in column_mapping.items():
+                        source_val = source_df[source_col].iloc[idx]
+                        target_val = target_df[target_col].iloc[idx]
+                        
+                        row_data[f'Source_{source_col}'] = source_val
+                        row_data[f'Target_{target_col}'] = target_val
+                        
+                        if pd.notna(source_val) and pd.notna(target_val):
+                            if source_val != target_val:
+                                has_difference = True
+                    
+                    if has_difference:
+                        comparison_data.append(row_data)
 
                 if not comparison_data:
                     comparison_df = pd.DataFrame({'Message': ['No differences found']})
