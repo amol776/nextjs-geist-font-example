@@ -403,8 +403,31 @@ def perform_comparison():
                 
                 # Display Y-Data Profiling Reports in expandable sections
                 st.subheader("Y-Data Profiling Reports")
+
+                # Generate comparison profile
+                comparison_profile = ProfileReport(
+                    pd.concat([
+                        st.session_state.source_df.add_prefix('Source_'),
+                        st.session_state.target_df.add_prefix('Target_')
+                    ], axis=1),
+                    title="Source vs Target Comparison Profile",
+                    minimal=True
+                )
+                comparison_html = f"reports/ComparisonProfile_{timestamp}.html"
+                comparison_profile.to_file(comparison_html)
                 
-                with st.expander("Source Data Profile", expanded=False):
+                # Store report paths in session state to prevent page reset
+                if 'report_paths' not in st.session_state:
+                    st.session_state.report_paths = {}
+                st.session_state.report_paths.update({
+                    'source_html': source_html,
+                    'target_html': target_html,
+                    'comparison_html': comparison_html
+                })
+                
+                tab1, tab2, tab3 = st.tabs(["Source Profile", "Target Profile", "Comparison Profile"])
+                
+                with tab1:
                     with open(source_html, 'r', encoding='utf-8') as f:
                         components.html(f.read(), height=600, scrolling=True)
                     
@@ -414,10 +437,11 @@ def perform_comparison():
                             "Download Source Profile Report",
                             f,
                             file_name=f"SourceProfile_{timestamp}.html",
-                            mime="text/html"
+                            mime="text/html",
+                            key="download_source"
                         )
                 
-                with st.expander("Target Data Profile", expanded=False):
+                with tab2:
                     with open(target_html, 'r', encoding='utf-8') as f:
                         components.html(f.read(), height=600, scrolling=True)
                     
@@ -427,12 +451,34 @@ def perform_comparison():
                             "Download Target Profile Report",
                             f,
                             file_name=f"TargetProfile_{timestamp}.html",
-                            mime="text/html"
+                            mime="text/html",
+                            key="download_target"
+                        )
+
+                with tab3:
+                    with open(comparison_html, 'r', encoding='utf-8') as f:
+                        components.html(f.read(), height=600, scrolling=True)
+                    
+                    # Download button for comparison profile
+                    with open(comparison_html, 'rb') as f:
+                        st.download_button(
+                            "Download Comparison Profile Report",
+                            f,
+                            file_name=f"ComparisonProfile_{timestamp}.html",
+                            mime="text/html",
+                            key="download_comparison"
                         )
                 
             except ImportError:
                 st.warning("Y-Data Profiling package not installed. Please install ydata-profiling package.")
                 # Continue with other reports...
+
+        # Store report paths in session state
+        st.session_state.report_paths.update({
+            'side_by_side_path': side_by_side_path,
+            'profiling_path': f"reports/ProfilingReport_{timestamp}.xlsx",
+            'regression_path': regression_path
+        })
 
         # Display results and download buttons
         col1, col2 = st.columns(2)
@@ -447,7 +493,8 @@ def perform_comparison():
                         "Download Difference Report",
                         f,
                         file_name=f"DifferenceReport_{timestamp}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key="download_difference"
                     )
         
         with col2:
@@ -456,38 +503,44 @@ def perform_comparison():
                 # Format the dataframe for better display
                 st.write("Column-wise Statistical Comparison:")
                 
-                # Create an expander for detailed view
-                with st.expander("View Detailed Profiling Report", expanded=True):
-                    # Display main metrics
-                    st.write("Main Metrics:")
+                # Create tabs for different views
+                metrics_tab, details_tab = st.tabs(["Main Metrics", "Detailed Statistics"])
+                
+                with metrics_tab:
                     main_metrics = profile_df[['Column', 'Source_Count', 'Target_Count', 'Match_Percentage']]
                     st.dataframe(main_metrics, use_container_width=True)
-                    
-                    # Display detailed statistics
-                    st.write("Detailed Statistics:")
+                
+                with details_tab:
                     st.dataframe(profile_df, use_container_width=True)
-                    
-                    # Download button for profiling report
-                    profiling_path = f"reports/ProfilingReport_{timestamp}.xlsx"
-                    profile_df.to_excel(profiling_path, index=False)
+                
+                # Save profiling report
+                profiling_path = st.session_state.report_paths['profiling_path']
+                profile_df.to_excel(profiling_path, index=False)
+                
+                # Download buttons with unique keys
+                col3, col4 = st.columns(2)
+                with col3:
                     with open(profiling_path, 'rb') as f:
                         st.download_button(
-                            "Download Complete Profiling Report",
+                            "Download Profiling Report",
                             f,
                             file_name=f"ProfilingReport_{timestamp}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key="download_profiling"
                         )
+                
+                with col4:
+                    if os.path.exists(regression_path):
+                        with open(regression_path, 'rb') as f:
+                            st.download_button(
+                                "Download Regression Report",
+                                f,
+                                file_name=f"RegressionReport_{timestamp}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                key="download_regression"
+                            )
             else:
                 st.error("Unable to generate profiling report. Please check the data and try again.")
-            
-            if os.path.exists(regression_path):
-                with open(regression_path, 'rb') as f:
-                    st.download_button(
-                        "Download Regression Report",
-                        f,
-                        file_name=f"RegressionReport_{timestamp}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
 
     except Exception as e:
         log_error(f"Error performing comparison: {str(e)}")
