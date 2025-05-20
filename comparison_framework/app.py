@@ -3,6 +3,9 @@ import pandas as pd
 from typing import Dict, List, Tuple, Optional, Any
 import os
 from datetime import datetime
+import datacompy
+from ydata_profiling import ProfileReport
+import streamlit.components.v1 as components
 
 # Import our modules
 from data_reader import DataReader
@@ -417,75 +420,90 @@ def perform_comparison():
                 comparison_profile.to_file(comparison_html)
 
                 # Generate DataCompy comparison report
-                import datacompy
-                
-                # Prepare join keys for DataCompy
-                join_columns = []
-                if join_keys:
-                    join_columns = [key[0] for key in join_keys]  # Use source column names
-                else:
-                    # If no join keys specified, use index
-                    st.session_state.source_df['_index'] = st.session_state.source_df.index
-                    st.session_state.target_df['_index'] = st.session_state.target_df.index
-                    join_columns = ['_index']
+                try:
+                    # Prepare join keys for DataCompy
+                    join_columns = []
+                    source_df = st.session_state.source_df.copy()
+                    target_df = st.session_state.target_df.copy()
+                    
+                    if join_keys:
+                        join_columns = [key[0] for key in join_keys]  # Use source column names
+                    else:
+                        # If no join keys specified, use index
+                        source_df['_index'] = source_df.index
+                        target_df['_index'] = target_df.index
+                        join_columns = ['_index']
 
-                # Create DataCompy comparison
-                comparison = datacompy.Compare(
-                    st.session_state.source_df,
-                    st.session_state.target_df,
-                    join_columns=join_columns,
-                    df1_name='Source',
-                    df2_name='Target'
-                )
+                    # Create DataCompy comparison
+                    comparison = datacompy.Compare(
+                        source_df,
+                        target_df,
+                        join_columns=join_columns,
+                        df1_name='Source',
+                        df2_name='Target'
+                    )
 
-                # Generate HTML report
-                datacompy_html = f"reports/DataCompyReport_{timestamp}.html"
-                with open(datacompy_html, 'w') as f:
-                    f.write(f"""
-                    <html>
-                    <head>
-                        <title>DataCompy Comparison Report</title>
-                        <style>
-                            body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                            .report {{ max-width: 1200px; margin: 0 auto; }}
-                            .section {{ margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }}
-                            .match {{ color: green; }}
-                            .mismatch {{ color: red; }}
-                            table {{ border-collapse: collapse; width: 100%; }}
-                            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                            th {{ background-color: #f5f5f5; }}
-                        </style>
-                    </head>
-                    <body>
-                        <div class="report">
-                            <h1>DataCompy Comparison Report</h1>
-                            <div class="section">
-                                <h2>Summary</h2>
-                                <pre>{comparison.report()}</pre>
-                            </div>
-                            <div class="section">
-                                <h2>Detailed Statistics</h2>
-                                <h3>Matches</h3>
-                                <div class="match">
-                                    <p>Number of rows match: {comparison.count_matching_rows()}</p>
-                                    <p>Number of columns match: {len(set(st.session_state.source_df.columns).intersection(st.session_state.target_df.columns))}</p>
+                    # Get column statistics safely
+                    column_stats_html = '<p>No column statistics available.</p>'
+                    try:
+                        if (hasattr(comparison, 'column_stats') and 
+                            isinstance(comparison.column_stats, pd.DataFrame) and 
+                            not comparison.column_stats.empty):
+                            column_stats_html = comparison.column_stats.to_html()
+                    except Exception as e:
+                        st.warning(f"Could not generate column statistics: {str(e)}")
+
+                    # Generate HTML report
+                    datacompy_html = f"reports/DataCompyReport_{timestamp}.html"
+                    with open(datacompy_html, 'w') as f:
+                        f.write(f"""
+                        <html>
+                        <head>
+                            <title>DataCompy Comparison Report</title>
+                            <style>
+                                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                                .report {{ max-width: 1200px; margin: 0 auto; }}
+                                .section {{ margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }}
+                                .match {{ color: green; }}
+                                .mismatch {{ color: red; }}
+                                table {{ border-collapse: collapse; width: 100%; }}
+                                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                                th {{ background-color: #f5f5f5; }}
+                            </style>
+                        </head>
+                        <body>
+                            <div class="report">
+                                <h1>DataCompy Comparison Report</h1>
+                                <div class="section">
+                                    <h2>Summary</h2>
+                                    <pre>{comparison.report()}</pre>
                                 </div>
-                                <h3>Mismatches</h3>
-                                <div class="mismatch">
-                                    <p>Rows only in Source: {len(comparison.df1_unq_rows)}</p>
-                                    <p>Rows only in Target: {len(comparison.df2_unq_rows)}</p>
-                                    <p>Source-only columns: {len(set(st.session_state.source_df.columns) - set(st.session_state.target_df.columns))}</p>
-                                    <p>Target-only columns: {len(set(st.session_state.target_df.columns) - set(st.session_state.source_df.columns))}</p>
+                                <div class="section">
+                                    <h2>Detailed Statistics</h2>
+                                    <h3>Matches</h3>
+                                    <div class="match">
+                                        <p>Number of rows match: {comparison.count_matching_rows()}</p>
+                                        <p>Number of columns match: {len(set(source_df.columns).intersection(target_df.columns))}</p>
+                                    </div>
+                                    <h3>Mismatches</h3>
+                                    <div class="mismatch">
+                                        <p>Rows only in Source: {len(comparison.df1_unq_rows)}</p>
+                                        <p>Rows only in Target: {len(comparison.df2_unq_rows)}</p>
+                                        <p>Source-only columns: {len(set(source_df.columns) - set(target_df.columns))}</p>
+                                        <p>Target-only columns: {len(set(target_df.columns) - set(source_df.columns))}</p>
+                                    </div>
+                                </div>
+                                <div class="section">
+                                    <h2>Column Statistics</h2>
+                                    {column_stats_html}
                                 </div>
                             </div>
-                            <div class="section">
-                                <h2>Column Statistics</h2>
-                                {comparison.column_stats.to_html() if not comparison.column_stats.empty else '<p>No column statistics available.</p>'}
-                            </div>
-                        </div>
-                    </body>
-                    </html>
-                    """)
+                        </body>
+                        </html>
+                        """)
+                except Exception as e:
+                    st.error(f"Error generating DataCompy report: {str(e)}")
+                    datacompy_html = None
 
                 # Store DataCompy report path
                 st.session_state.report_paths['datacompy_html'] = datacompy_html
@@ -544,56 +562,66 @@ def perform_comparison():
                         )
 
                 with tab4:
-                    with open(datacompy_html, 'r', encoding='utf-8') as f:
-                        components.html(f.read(), height=600, scrolling=True)
+                    if datacompy_html and os.path.exists(datacompy_html):
+                        with open(datacompy_html, 'r', encoding='utf-8') as f:
+                            components.html(f.read(), height=600, scrolling=True)
+                        
+                        # Download button for DataCompy report
+                        with open(datacompy_html, 'rb') as f:
+                            st.download_button(
+                                "Download DataCompy Report",
+                                f,
+                                file_name=f"DataCompyReport_{timestamp}.html",
+                                mime="text/html",
+                                key="download_datacompy"
+                            )
+                    else:
+                        st.error("DataCompy report generation failed. Please check the data and try again.")
                     
-                    # Download button for DataCompy report
-                    with open(datacompy_html, 'rb') as f:
-                        st.download_button(
-                            "Download DataCompy Report",
-                            f,
-                            file_name=f"DataCompyReport_{timestamp}.html",
-                            mime="text/html",
-                            key="download_datacompy"
-                        )
-                    
-                    # Show additional DataCompy insights
-                    with st.expander("DataCompy Insights", expanded=False):
-                        st.write("### Match Statistics")
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            st.metric(
-                                "Matching Rows",
-                                comparison.count_matching_rows(),
-                                delta=f"{comparison.count_matching_rows() / len(st.session_state.source_df) * 100:.1f}%"
-                            )
-                        
-                        with col2:
-                            st.metric(
-                                "Source Only Rows",
-                                len(comparison.df1_unq_rows),
-                                delta=f"{len(comparison.df1_unq_rows) / len(st.session_state.source_df) * 100:.1f}%"
-                            )
-                        
-                        with col3:
-                            st.metric(
-                                "Target Only Rows",
-                                len(comparison.df2_unq_rows),
-                                delta=f"{len(comparison.df2_unq_rows) / len(st.session_state.target_df) * 100:.1f}%"
-                            )
-                        
-                        st.write("### Column Analysis")
-                        
-                        # Get column sets
-                        source_cols = set(st.session_state.source_df.columns)
-                        target_cols = set(st.session_state.target_df.columns)
-                        common_cols = source_cols.intersection(target_cols)
-                        source_only = source_cols - target_cols
-                        target_only = target_cols - source_cols
-                        
-                        # Display column sets
-                        col1, col2 = st.columns(2)
+                        # Show additional DataCompy insights
+                        with st.expander("DataCompy Insights", expanded=False):
+                            try:
+                                st.write("### Match Statistics")
+                                col1, col2, col3 = st.columns(3)
+                                
+                                matching_rows = comparison.count_matching_rows()
+                                source_only_rows = len(comparison.df1_unq_rows)
+                                target_only_rows = len(comparison.df2_unq_rows)
+                                
+                                with col1:
+                                    st.metric(
+                                        "Matching Rows",
+                                        matching_rows,
+                                        delta=f"{matching_rows / len(source_df) * 100:.1f}%"
+                                    )
+                                
+                                with col2:
+                                    st.metric(
+                                        "Source Only Rows",
+                                        source_only_rows,
+                                        delta=f"{source_only_rows / len(source_df) * 100:.1f}%"
+                                    )
+                                
+                                with col3:
+                                    st.metric(
+                                        "Target Only Rows",
+                                        target_only_rows,
+                                        delta=f"{target_only_rows / len(target_df) * 100:.1f}%"
+                                    )
+                                
+                                st.write("### Column Analysis")
+                                
+                                # Get column sets
+                                source_cols = set(source_df.columns)
+                                target_cols = set(target_df.columns)
+                                common_cols = source_cols.intersection(target_cols)
+                                source_only = source_cols - target_cols
+                                target_only = target_cols - source_cols
+
+                                # Display column sets
+                                col1, col2 = st.columns(2)
+                            except Exception as e:
+                                st.error(f"Error displaying insights: {str(e)}")
                         
                         with col1:
                             st.write("Source-only Columns:")
