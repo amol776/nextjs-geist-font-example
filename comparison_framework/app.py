@@ -568,20 +568,21 @@ def perform_comparison():
                         with open(datacompy_html, 'r', encoding='utf-8') as f:
                             components.html(f.read(), height=600, scrolling=True)
                         
-                        # Download button for DataCompy report
-                        with open(datacompy_html, 'rb') as f:
-                            st.download_button(
-                                "Download DataCompy Report",
-                                f,
-                                file_name=f"DataCompyReport_{timestamp}.html",
-                                mime="text/html",
-                                key="download_datacompy"
-                            )
-                    else:
-                        st.error("DataCompy report generation failed. Please check the data and try again.")
-                    
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            # Download button for DataCompy report
+                            with open(datacompy_html, 'rb') as f:
+                                st.download_button(
+                                    "📥 Download DataCompy Report",
+                                    f,
+                                    file_name=f"DataCompyReport_{timestamp}.html",
+                                    mime="text/html",
+                                    key="download_datacompy",
+                                    use_container_width=True
+                                )
+                        
                         # Show additional DataCompy insights
-                        with st.expander("DataCompy Insights", expanded=False):
+                        with st.expander("📊 DataCompy Insights", expanded=False):
                             try:
                                 st.write("### Match Statistics")
                                 col1, col2, col3 = st.columns(3)
@@ -622,16 +623,53 @@ def perform_comparison():
 
                                 # Display column sets
                                 col1, col2 = st.columns(2)
+                                
+                                with col1:
+                                    st.write("Source-only Columns:")
+                                    if source_only:
+                                        for col in sorted(source_only):
+                                            st.info(f"- {col}")
+                                    else:
+                                        st.success("No source-only columns")
+                                
+                                with col2:
+                                    st.write("Target-only Columns:")
+                                    if target_only:
+                                        for col in sorted(target_only):
+                                            st.info(f"- {col}")
+                                    else:
+                                        st.success("No target-only columns")
+                                
+                                st.write("### Common Column Analysis")
+                                if common_cols:
+                                    for col in sorted(common_cols):
+                                        # Calculate match rate for common columns
+                                        source_values = set(source_df[col].dropna())
+                                        target_values = set(target_df[col].dropna())
+                                        common_values = source_values.intersection(target_values)
+                                        all_values = source_values.union(target_values)
+                                        match_rate = len(common_values) / len(all_values) if all_values else 1.0
+                                        
+                                        # Display progress bar with details
+                                        st.progress(
+                                            match_rate,
+                                            text=f"{col}: {match_rate*100:.1f}% unique values match"
+                                        )
+                                        
+                                        with st.expander(f"Details for {col}", expanded=False):
+                                            st.write(f"- Unique values in Source: {len(source_values)}")
+                                            st.write(f"- Unique values in Target: {len(target_values)}")
+                                            st.write(f"- Common unique values: {len(common_values)}")
+                                            if len(source_values - target_values) > 0:
+                                                st.write("- Values only in Source:", list(source_values - target_values)[:5])
+                                            if len(target_values - source_values) > 0:
+                                                st.write("- Values only in Target:", list(target_values - source_values)[:5])
+                                else:
+                                    st.warning("No common columns found between source and target datasets")
                             except Exception as e:
                                 st.error(f"Error displaying insights: {str(e)}")
-                        
-                        with col1:
-                            st.write("Source-only Columns:")
-                            if source_only:
-                                for col in sorted(source_only):
-                                    st.info(f"- {col}")
-                            else:
-                                st.success("No source-only columns")
+                    else:
+                        st.error("❌ DataCompy report generation failed. Please check the data and try again.")
                         
                         with col2:
                             st.write("Target-only Columns:")
