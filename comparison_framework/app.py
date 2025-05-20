@@ -415,6 +415,79 @@ def perform_comparison():
                 )
                 comparison_html = f"reports/ComparisonProfile_{timestamp}.html"
                 comparison_profile.to_file(comparison_html)
+
+                # Generate DataCompy comparison report
+                import datacompy
+                
+                # Prepare join keys for DataCompy
+                join_columns = []
+                if join_keys:
+                    join_columns = [key[0] for key in join_keys]  # Use source column names
+                else:
+                    # If no join keys specified, use index
+                    st.session_state.source_df['_index'] = st.session_state.source_df.index
+                    st.session_state.target_df['_index'] = st.session_state.target_df.index
+                    join_columns = ['_index']
+
+                # Create DataCompy comparison
+                comparison = datacompy.Compare(
+                    st.session_state.source_df,
+                    st.session_state.target_df,
+                    join_columns=join_columns,
+                    df1_name='Source',
+                    df2_name='Target'
+                )
+
+                # Generate HTML report
+                datacompy_html = f"reports/DataCompyReport_{timestamp}.html"
+                with open(datacompy_html, 'w') as f:
+                    f.write(f"""
+                    <html>
+                    <head>
+                        <title>DataCompy Comparison Report</title>
+                        <style>
+                            body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                            .report {{ max-width: 1200px; margin: 0 auto; }}
+                            .section {{ margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }}
+                            .match {{ color: green; }}
+                            .mismatch {{ color: red; }}
+                            table {{ border-collapse: collapse; width: 100%; }}
+                            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                            th {{ background-color: #f5f5f5; }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="report">
+                            <h1>DataCompy Comparison Report</h1>
+                            <div class="section">
+                                <h2>Summary</h2>
+                                <pre>{comparison.report()}</pre>
+                            </div>
+                            <div class="section">
+                                <h2>Detailed Statistics</h2>
+                                <h3>Matches</h3>
+                                <div class="match">
+                                    <p>Number of rows match: {comparison.count_matching_rows()}</p>
+                                    <p>Number of columns match: {comparison.count_matching_columns()}</p>
+                                </div>
+                                <h3>Mismatches</h3>
+                                <div class="mismatch">
+                                    <p>Rows only in Source: {len(comparison.df1_unq_rows)}</p>
+                                    <p>Rows only in Target: {len(comparison.df2_unq_rows)}</p>
+                                    <p>Number of columns with differences: {len(comparison.column_stats)}</p>
+                                </div>
+                            </div>
+                            <div class="section">
+                                <h2>Column Statistics</h2>
+                                {comparison.column_stats.to_html() if not comparison.column_stats.empty else '<p>No column statistics available.</p>'}
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                    """)
+
+                # Store DataCompy report path
+                st.session_state.report_paths['datacompy_html'] = datacompy_html
                 
                 # Store report paths in session state to prevent page reset
                 if 'report_paths' not in st.session_state:
@@ -425,7 +498,7 @@ def perform_comparison():
                     'comparison_html': comparison_html
                 })
                 
-                tab1, tab2, tab3 = st.tabs(["Source Profile", "Target Profile", "Comparison Profile"])
+                tab1, tab2, tab3, tab4 = st.tabs(["Source Profile", "Target Profile", "Comparison Profile", "DataCompy Report"])
                 
                 with tab1:
                     with open(source_html, 'r', encoding='utf-8') as f:
@@ -468,6 +541,54 @@ def perform_comparison():
                             mime="text/html",
                             key="download_comparison"
                         )
+
+                with tab4:
+                    with open(datacompy_html, 'r', encoding='utf-8') as f:
+                        components.html(f.read(), height=600, scrolling=True)
+                    
+                    # Download button for DataCompy report
+                    with open(datacompy_html, 'rb') as f:
+                        st.download_button(
+                            "Download DataCompy Report",
+                            f,
+                            file_name=f"DataCompyReport_{timestamp}.html",
+                            mime="text/html",
+                            key="download_datacompy"
+                        )
+                    
+                    # Show additional DataCompy insights
+                    with st.expander("DataCompy Insights", expanded=False):
+                        st.write("### Match Statistics")
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric(
+                                "Matching Rows",
+                                comparison.count_matching_rows(),
+                                delta=f"{comparison.count_matching_rows() / len(st.session_state.source_df) * 100:.1f}%"
+                            )
+                        
+                        with col2:
+                            st.metric(
+                                "Source Only Rows",
+                                len(comparison.df1_unq_rows),
+                                delta=f"{len(comparison.df1_unq_rows) / len(st.session_state.source_df) * 100:.1f}%"
+                            )
+                        
+                        with col3:
+                            st.metric(
+                                "Target Only Rows",
+                                len(comparison.df2_unq_rows),
+                                delta=f"{len(comparison.df2_unq_rows) / len(st.session_state.target_df) * 100:.1f}%"
+                            )
+                        
+                        st.write("### Column Match Status")
+                        for col in comparison.column_stats.index:
+                            match_rate = comparison.column_stats.loc[col, 'match_rate']
+                            st.progress(
+                                match_rate,
+                                text=f"{col}: {match_rate*100:.1f}% match rate"
+                            )
                 
             except ImportError:
                 st.warning("Y-Data Profiling package not installed. Please install ydata-profiling package.")
