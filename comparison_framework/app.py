@@ -191,8 +191,16 @@ def handle_database_connection(db_type: str, prefix: str) -> Optional[pd.DataFra
     with st.expander(f"{db_type} Connection Details"):
         host = st.text_input("Host", key=f"{prefix}_host")
         database = st.text_input("Database", key=f"{prefix}_database")
-        username = st.text_input("Username", key=f"{prefix}_username")
-        password = st.text_input("Password", type="password", key=f"{prefix}_password")
+        
+        if db_type in ["SQL Server", "Stored Procedure"]:
+            use_windows_auth = st.checkbox("Use Windows Authentication", value=True, key=f"{prefix}_use_windows_auth")
+            if not use_windows_auth:
+                username = st.text_input("Username", key=f"{prefix}_username")
+                password = st.text_input("Password", type="password", key=f"{prefix}_password")
+        else:
+            use_windows_auth = False
+            username = st.text_input("Username", key=f"{prefix}_username")
+            password = st.text_input("Password", type="password", key=f"{prefix}_password")
         
         if db_type == "Stored Procedure":
             proc_name = st.text_input("Stored Procedure Name", key=f"{prefix}_proc")
@@ -202,12 +210,19 @@ def handle_database_connection(db_type: str, prefix: str) -> Optional[pd.DataFra
 
         if st.button("Connect", key=f"{prefix}_connect"):
             try:
+                # Build connection parameters
                 conn_params = {
                     'host': host,
                     'database': database,
-                    'username': username,
-                    'password': password
+                    'use_windows_auth': use_windows_auth if db_type in ["SQL Server", "Stored Procedure"] else False
                 }
+                
+                # Add username/password only if not using Windows Auth
+                if not (db_type in ["SQL Server", "Stored Procedure"] and use_windows_auth):
+                    conn_params.update({
+                        'username': username,
+                        'password': password
+                    })
                 
                 if db_type == "SQL Server":
                     return DatabaseConnector.get_sqlserver_data(conn_params, query)
