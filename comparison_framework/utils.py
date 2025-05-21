@@ -67,8 +67,17 @@ def validate_connection_params(params: dict) -> bool:
     Returns:
         bool: True if parameters are valid, False otherwise
     """
-    required_params = ['host', 'database', 'username', 'password']
-    return all(param in params for param in required_params)
+    # Basic required parameters for all connections
+    basic_params = ['host', 'database']
+    
+    # Check if using Windows Authentication
+    if params.get('use_windows_auth', True):
+        # Only host and database are required for Windows Auth
+        return all(param in params for param in basic_params)
+    else:
+        # Username and password required for SQL authentication
+        sql_auth_params = basic_params + ['username', 'password']
+        return all(param in params for param in sql_auth_params)
 
 def sanitize_filename(filename: str) -> str:
     """
